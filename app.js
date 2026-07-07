@@ -6,47 +6,29 @@ let db;
 let currentImageDataUrl = null; // pending upload for add/edit modal
 let editingId = null;
 
-// OCR로 텍스트만 뽑고, 알려진 브랜드명이 텍스트에 포함되어 있으면 브랜드/업종을 추정한다.
+// OCR로 텍스트만 뽑고, 알려진 브랜드명이 텍스트에 포함되어 있으면 브랜드를 추정한다.
 // 로고만 있고 텍스트가 없는 경우, 또는 목록에 없는 브랜드는 인식하지 못하므로 항상 수동 확인이 필요하다.
-const BRAND_CATEGORY_MAP = {
-  "올리브영": "뷰티", "무신사": "패션", "지그재그": "패션", "에이블리": "패션", "브랜디": "패션", "화해": "뷰티",
-  "쿠팡": "이커머스", "컬리": "이커머스", "마켓컬리": "이커머스", "11번가": "이커머스", "지마켓": "이커머스", "G마켓": "이커머스", "다이소": "이커머스", "하이마트": "이커머스",
-  "배달의민족": "F&B", "배민": "F&B", "요기요": "F&B", "쿠팡이츠": "F&B",
-  "토스": "금융", "카카오뱅크": "금융", "카카오페이": "금융", "신한카드": "금융", "삼성카드": "금융", "뱅크샐러드": "금융", "핀다": "금융", "토스증권": "금융",
-  "야놀자": "여행", "여기어때": "여행", "트리플": "여행", "마이리얼트립": "여행", "클룩": "여행",
-  "리니지": "게임", "오딘": "게임", "우마무스메": "게임", "넷마블": "게임", "넥슨": "게임", "라이온하트": "게임",
-  "메가스터디": "교육", "해커스": "교육", "야나두": "교육", "클래스101": "교육", "콴다": "교육", "시원스쿨": "교육", "스픽": "교육",
-  "당근마켓": "이커머스", "당근": "이커머스", "오늘의집": "이커머스",
-  "직방": "기타", "다방": "기타",
-  "원티드": "기타", "잡코리아": "기타", "사람인": "기타", "리멤버": "기타",
-  "카카오T": "기타", "카카오모빌리티": "기타", "타다": "기타", "쏘카": "기타", "그린카": "기타",
-};
-
-const CATEGORY_KEYWORDS = {
-  "뷰티": ["스킨", "화장품", "크림", "앰플", "선크림", "파운데이션", "클렌징"],
-  "패션": ["원피스", "신발", "가방", "코디", "룩북", "니트"],
-  "게임": ["사전예약", "레벨업", "길드", "전투", "캐릭터", "출시"],
-  "금융": ["적금", "대출", "환전", "이자", "카드발급", "재테크", "투자"],
-  "이커머스": ["최저가", "특가", "쿠폰", "배송", "로켓배송", "타임세일"],
-  "교육": ["강의", "인강", "수강", "합격", "자격증"],
-  "여행": ["항공권", "호텔", "숙소", "예약", "여행자보험"],
-  "F&B": ["맛집", "배달", "주문", "할인쿠폰", "1인분"],
-  "헬스케어": ["병원", "다이어트", "영양제", "건강검진", "비대면진료"],
-};
+const KNOWN_BRANDS = [
+  "올리브영", "무신사", "지그재그", "에이블리", "브랜디", "화해",
+  "쿠팡", "컬리", "마켓컬리", "11번가", "지마켓", "G마켓", "다이소", "하이마트",
+  "배달의민족", "배민", "요기요", "쿠팡이츠",
+  "토스", "카카오뱅크", "카카오페이", "신한카드", "삼성카드", "뱅크샐러드", "핀다", "토스증권",
+  "야놀자", "여기어때", "트리플", "마이리얼트립", "클룩",
+  "리니지", "오딘", "우마무스메", "넷마블", "넥슨", "라이온하트",
+  "메가스터디", "해커스", "야나두", "클래스101", "콴다", "시원스쿨", "스픽",
+  "당근마켓", "당근", "오늘의집",
+  "직방", "다방",
+  "원티드", "잡코리아", "사람인", "리멤버",
+  "카카오T", "카카오모빌리티", "타다", "쏘카", "그린카",
+];
 
 function guessFromOcrText(text) {
-  const result = { brand: "", category: "", copyText: "" };
+  const result = { brand: "", copyText: "" };
   if (!text) return result;
 
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length >= 2);
 
-  for (const [brand, category] of Object.entries(BRAND_CATEGORY_MAP)) {
-    if (text.includes(brand)) {
-      result.brand = brand;
-      result.category = category;
-      break;
-    }
-  }
+  result.brand = KNOWN_BRANDS.find((brand) => text.includes(brand)) || "";
 
   // 카피는 보통 2줄 이내로 나뉘어 있으므로, 브랜드명 줄을 제외한 가장 긴 두 줄을
   // 원래 등장 순서대로 이어붙인다.
@@ -55,16 +37,6 @@ function guessFromOcrText(text) {
     .sort((a, b) => b.length - a.length)
     .slice(0, 2);
   result.copyText = lines.filter((l) => topLines.includes(l)).join(" ");
-
-  if (!result.category) {
-    let bestCategory = "";
-    let bestScore = 0;
-    for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-      const score = keywords.filter((k) => text.includes(k)).length;
-      if (score > bestScore) { bestScore = score; bestCategory = category; }
-    }
-    if (bestScore > 0) result.category = bestCategory;
-  }
 
   return result;
 }
@@ -117,15 +89,13 @@ async function runOcrAutoFill(dataUrl) {
     const guess = guessFromOcrText(text);
 
     const brandInput = document.getElementById("inBrand");
-    const categoryInput = document.getElementById("inCategory");
     const copyInput = document.getElementById("inCopy");
 
     if (guess.brand && !brandInput.value) brandInput.value = guess.brand;
-    if (guess.category && !categoryInput.value) categoryInput.value = guess.category;
     if (guess.copyText && !copyInput.value) copyInput.value = guess.copyText;
 
     statusEl.classList.remove("working");
-    statusEl.textContent = (guess.brand || guess.category || guess.copyText)
+    statusEl.textContent = (guess.brand || guess.copyText)
       ? "자동 인식 완료 — 내용을 확인하고 필요하면 수정해주세요."
       : "텍스트를 인식하지 못했어요. 직접 입력해주세요.";
   } catch (err) {
@@ -144,7 +114,6 @@ function openDb() {
       if (!_db.objectStoreNames.contains(STORE)) {
         const store = _db.createObjectStore(STORE, { keyPath: "id" });
         store.createIndex("brand", "brand", { unique: false });
-        store.createIndex("category", "category", { unique: false });
         store.createIndex("date", "date", { unique: false });
       }
     };
@@ -190,17 +159,8 @@ let allAds = [];
 
 async function refresh() {
   allAds = await dbGetAll();
-  populateCategoryFilter();
   populateMediaFilter();
   renderGallery();
-}
-
-function populateCategoryFilter() {
-  const sel = document.getElementById("fCategory");
-  const current = sel.value;
-  const cats = Array.from(new Set(allAds.map((a) => a.category).filter(Boolean))).sort();
-  sel.innerHTML = '<option value="">업종 전체</option>' + cats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-  sel.value = current;
 }
 
 function populateMediaFilter() {
@@ -219,7 +179,6 @@ function escapeHtml(str) {
 function getFilters() {
   return {
     search: document.getElementById("fSearch").value.trim().toLowerCase(),
-    category: document.getElementById("fCategory").value,
     media: document.getElementById("fMedia").value,
     size: document.getElementById("fSize").value,
     age: document.getElementById("fAge").value,
@@ -236,7 +195,6 @@ function applyFilters(ads, f) {
       const hay = [a.brand, a.copyText, a.memo].join(" ").toLowerCase();
       if (!hay.includes(f.search)) return false;
     }
-    if (f.category && a.category !== f.category) return false;
     if (f.media && a.media !== f.media) return false;
     if (f.size && a.size !== f.size) return false;
     if (f.age && !(a.targetAge || []).includes(f.age)) return false;
@@ -279,7 +237,6 @@ function renderGallery() {
       <div class="card-body">
         <p class="card-brand">${escapeHtml(a.brand) || "(브랜드 미입력)"}</p>
         <div class="card-tags">
-          ${a.category ? `<span class="tag category">${escapeHtml(a.category)}</span>` : ""}
           ${a.media ? `<span class="tag media">${escapeHtml(a.media)}</span>` : ""}
           ${a.size ? `<span class="tag size">${escapeHtml(a.size)}</span>` : ""}
           ${(a.targetAge || []).map((t) => `<span class="tag age">${escapeHtml(t)}</span>`).join("")}
@@ -312,7 +269,6 @@ function resetForm() {
   document.getElementById("btnRecrop").hidden = true;
   closeCropStage();
   document.getElementById("inBrand").value = "";
-  document.getElementById("inCategory").value = "";
   document.getElementById("inSize").value = "";
   document.getElementById("inMedia").value = "";
   document.getElementById("inFormat").value = "오브젝트형";
@@ -342,7 +298,6 @@ function openEditModal(ad) {
   dropZoneText.hidden = true;
   document.getElementById("btnRecrop").hidden = false;
   document.getElementById("inBrand").value = ad.brand || "";
-  document.getElementById("inCategory").value = ad.category || "";
   document.getElementById("inSize").value = ad.size || "";
   document.getElementById("inMedia").value = ad.media || "";
   document.getElementById("inFormat").value = ad.format || "오브젝트형";
@@ -465,7 +420,6 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     id: editingId || uid(),
     image: currentImageDataUrl,
     brand: document.getElementById("inBrand").value.trim(),
-    category: document.getElementById("inCategory").value.trim(),
     size: document.getElementById("inSize").value,
     media: document.getElementById("inMedia").value.trim(),
     format: document.getElementById("inFormat").value,
@@ -502,7 +456,6 @@ function openDetail(id) {
   document.getElementById("detailImg").src = ad.image;
   const meta = document.getElementById("detailMeta");
   const rows = [
-    ["업종", ad.category],
     ["소재 사이즈", ad.size],
     ["매체", ad.media],
     ["소재 형식", ad.format],
@@ -534,14 +487,13 @@ document.getElementById("btnDetailDelete").addEventListener("click", async () =>
 });
 
 // ---------- Filters ----------
-["fSearch", "fCategory", "fMedia", "fSize", "fAge", "fGender", "fDateFrom", "fDateTo", "fSort"].forEach((id) => {
+["fSearch", "fMedia", "fSize", "fAge", "fGender", "fDateFrom", "fDateTo", "fSort"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderGallery);
   document.getElementById(id).addEventListener("change", renderGallery);
 });
 
 document.getElementById("btnResetFilter").addEventListener("click", () => {
   document.getElementById("fSearch").value = "";
-  document.getElementById("fCategory").value = "";
   document.getElementById("fMedia").value = "";
   document.getElementById("fSize").value = "";
   document.getElementById("fAge").value = "";
