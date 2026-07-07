@@ -106,6 +106,67 @@ async function runOcrAutoFill(dataUrl) {
   }
 }
 
+// 업로드한 원본 파일이 GIF였는지 기억해서, 크롭 후에도 "영상형" 자동 판단에 쓴다.
+let pendingIsAnimated = false;
+
+function loadImageEl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function guessSizeFromDimensions(width, height) {
+  const ratio = width / height;
+  if (ratio > 1.15) return "가로";
+  if (ratio < 0.87) return "세로";
+  return "정방형";
+}
+
+// 배경이 단조로우면(한 색이 화면 대부분을 차지) 아이콘/오브젝트가 얹힌 오브젝트형,
+// 색이 다양하게 퍼져 있으면 풀 이미지인 이미지형으로 추정한다. 어디까지나 대략적인 추정이라
+// 실제로는 반드시 확인이 필요하다.
+function guessFormatFromImage(img) {
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+
+  const { width, height } = canvas;
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 60));
+  const colorCounts = new Map();
+  let total = 0;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      const key = `${data[i] >> 4},${data[i + 1] >> 4},${data[i + 2] >> 4}`;
+      colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+      total++;
+    }
+  }
+  if (!total) return "";
+  const maxCount = Math.max(...colorCounts.values());
+  return maxCount / total > 0.5 ? "오브젝트형" : "이미지형";
+}
+
+async function autoFillFromImageMeta(dataUrl) {
+  const sizeInput = document.getElementById("inSize");
+  const formatInput = document.getElementById("inFormat");
+  try {
+    const img = await loadImageEl(dataUrl);
+    if (!sizeInput.value) sizeInput.value = guessSizeFromDimensions(img.width, img.height);
+    if (!formatInput.value) {
+      formatInput.value = pendingIsAnimated ? "영상형" : guessFormatFromImage(img);
+    }
+  } catch (err) {
+    // 인식 실패 시 조용히 넘어가고 수동 선택을 유도한다.
+  }
+}
+
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -230,6 +291,7 @@ function renderGallery() {
         <div class="card-tags">
           ${a.media ? `<span class="tag media">${escapeHtml(a.media)}</span>` : ""}
           ${a.size ? `<span class="tag size">${escapeHtml(a.size)}</span>` : ""}
+          ${a.format ? `<span class="tag format">${escapeHtml(a.format)}</span>` : ""}
           ${(a.targetAge || []).map((t) => `<span class="tag age">${escapeHtml(t)}</span>`).join("")}
           ${a.targetGender ? `<span class="tag gender">${escapeHtml(a.targetGender)}</span>` : ""}
         </div>
@@ -259,10 +321,11 @@ function resetForm() {
   dropZone.hidden = false;
   document.getElementById("btnRecrop").hidden = true;
   closeCropStage();
+  pendingIsAnimated = false;
   document.getElementById("inBrand").value = "";
   document.getElementById("inSize").value = "";
   document.getElementById("inMedia").value = "";
-  document.getElementById("inFormat").value = "오브젝트형";
+  document.getElementById("inFormat").value = "";
   document.getElementById("inDate").value = new Date().toISOString().slice(0, 10);
   document.getElementById("inGender").value = "전체/불명";
   document.getElementById("inCopy").value = "";
@@ -291,7 +354,7 @@ function openEditModal(ad) {
   document.getElementById("inBrand").value = ad.brand || "";
   document.getElementById("inSize").value = ad.size || "";
   document.getElementById("inMedia").value = ad.media || "";
-  document.getElementById("inFormat").value = ad.format || "오브젝트형";
+  document.getElementById("inFormat").value = ad.format || "";
   document.getElementById("inDate").value = ad.date || "";
   document.getElementById("inGender").value = ad.targetGender || "전체/불명";
   document.getElementById("inCopy").value = ad.copyText || "";
@@ -316,6 +379,7 @@ function finalizeImage(dataUrl) {
   dropZoneText.hidden = true;
   dropZone.hidden = false;
   document.getElementById("btnRecrop").hidden = false;
+  autoFillFromImageMeta(dataUrl);
   runOcrAutoFill(dataUrl);
 }
 
@@ -368,6 +432,7 @@ document.getElementById("btnRecrop").addEventListener("click", () => {
 
 function handleFile(file) {
   if (!file || !file.type.startsWith("image/")) return;
+  pendingIsAnimated = file.type === "image/gif";
   const reader = new FileReader();
   reader.onload = () => openCropStage(reader.result);
   reader.readAsDataURL(file);
