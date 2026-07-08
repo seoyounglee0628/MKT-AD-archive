@@ -11,9 +11,6 @@
   <header class="topbar">
     <h1>📌 광고 소재 아카이브</h1>
     <div class="topbar-actions">
-      <button id="btnExport" class="btn btn-ghost">내보내기</button>
-      <label class="btn btn-ghost" for="importFile">가져오기</label>
-      <input type="file" id="importFile" accept="application/json" hidden />
       <button id="btnAdd" class="btn btn-primary">+ 광고 추가</button>
     </div>
   </header>
@@ -95,15 +92,6 @@
             <input type="text" id="inBrand" placeholder="예: 올리브영" />
           </label>
 
-          <label>소재 사이즈
-            <select id="inSize">
-              <option value="">선택 안 함</option>
-              <option value="가로">가로형</option>
-              <option value="세로">세로형</option>
-              <option value="정방형">정방형</option>
-            </select>
-          </label>
-
           <label>매체
             <select id="inMedia">
               <option value="">선택 안 함</option>
@@ -125,9 +113,18 @@
               <option value="오브젝트형">오브젝트형</option>
               <option value="이미지형">이미지형</option>
               <option value="영상형">영상형</option>
-              <option value="텍스트형">텍스트형</option>
+              <option value="메시지형">메시지형</option>
               <option value="캐러셀">캐러셀</option>
               <option value="기타">기타</option>
+            </select>
+          </label>
+
+          <label>소재 사이즈
+            <select id="inSize">
+              <option value="">선택 안 함</option>
+              <option value="가로">가로형</option>
+              <option value="세로">세로형</option>
+              <option value="정방형">정방형</option>
             </select>
           </label>
 
@@ -168,6 +165,7 @@
       <div class="modal-footer">
         <button id="btnDetailDelete" class="btn btn-danger">삭제</button>
         <div class="spacer"></div>
+        <button id="btnDetailDownload" class="btn btn-ghost">⬇️ 다운로드</button>
         <button id="btnDetailEdit" class="btn btn-primary">수정</button>
       </div>
     </div>

@@ -572,6 +572,30 @@ document.getElementById("btnDetailDelete").addEventListener("click", async () =>
   }
 });
 
+document.getElementById("btnDetailDownload").addEventListener("click", async () => {
+  const ad = allAds.find((a) => a.id === detailAdId);
+  if (!ad || !ad.image) return;
+  const btn = document.getElementById("btnDetailDownload");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "다운로드 중...";
+  try {
+    const res = await fetch(ad.image);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${ad.brand || "ad"}_${ad.date || ""}.png`.replace(/\s+/g, "_");
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    alert("다운로드에 실패했어요.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
 // ---------- Filters ----------
 ["fSearch", "fMedia", "fSize", "fDateFrom", "fDateTo", "fSort"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderGallery);
@@ -589,37 +613,6 @@ document.getElementById("btnResetFilter").addEventListener("click", () => {
 });
 
 document.getElementById("btnRefresh").addEventListener("click", refresh);
-
-// ---------- Export / Import ----------
-document.getElementById("btnExport").addEventListener("click", async () => {
-  const ads = await dbGetAll();
-  const blob = new Blob([JSON.stringify(ads, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `bizboard-archive-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-document.getElementById("importFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    const records = JSON.parse(text);
-    if (!Array.isArray(records)) throw new Error("invalid format");
-    for (const r of records) {
-      if (r.id && r.image) await dbPut(r);
-    }
-    await refresh();
-    alert(`${records.length}개 항목을 가져왔습니다.`);
-  } catch (err) {
-    alert("가져오기 실패: 올바른 백업 파일인지 확인해주세요.");
-  } finally {
-    e.target.value = "";
-  }
-});
 
 // ---------- Keyboard ----------
 document.addEventListener("keydown", (e) => {
