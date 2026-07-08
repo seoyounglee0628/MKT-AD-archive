@@ -45,6 +45,7 @@ body {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  text-decoration: none;
 }
 
 .btn-primary { background: var(--primary); color: var(--primary-text); }
