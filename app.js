@@ -1,8 +1,9 @@
-// 카카오 비즈보드 아카이브 - 로컬 전용 (IndexedDB에 이미지+메타데이터 저장)
+// 카카오 비즈보드 아카이브 - Supabase(공유 DB + Storage)에 이미지+메타데이터 저장, 팀원 전체가 같은 데이터를 봄
 
-const DB_NAME = "bizboard-archive";
-const STORE = "ads";
-let db;
+const SUPABASE_URL = "https://cpvnppnboeqdlrnmgtmu.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwdm5wcG5ib2VxZGxybm1ndG11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0NjA0MzQsImV4cCI6MjA5OTAzNjQzNH0.Qa_sA1G_qkldfTBpS2BObjBjhDhHxMJqXVc7tzY6Hf4";
+const IMAGE_BUCKET = "ad-images";
+let supabaseClient;
 let currentImageDataUrl = null; // pending upload for add/edit modal
 let editingId = null;
 
@@ -167,48 +168,67 @@ async function autoFillFromImageMeta(dataUrl) {
   }
 }
 
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const _db = req.result;
-      if (!_db.objectStoreNames.contains(STORE)) {
-        const store = _db.createObjectStore(STORE, { keyPath: "id" });
-        store.createIndex("brand", "brand", { unique: false });
-        store.createIndex("date", "date", { unique: false });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function initSupabase() {
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
-function txStore(mode) {
-  return db.transaction(STORE, mode).objectStore(STORE);
+function rowToAd(row) {
+  return {
+    id: row.id,
+    image: row.image,
+    brand: row.brand,
+    size: row.size,
+    media: row.media,
+    format: row.format,
+    date: row.date,
+    copyText: row.copy_text,
+    memo: row.memo,
+    createdAt: row.created_at,
+  };
 }
 
-function dbGetAll() {
-  return new Promise((resolve, reject) => {
-    const req = txStore("readonly").getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function adToRow(ad) {
+  return {
+    id: ad.id,
+    image: ad.image,
+    brand: ad.brand,
+    size: ad.size,
+    media: ad.media,
+    format: ad.format,
+    date: ad.date,
+    copy_text: ad.copyText,
+    memo: ad.memo,
+    created_at: ad.createdAt,
+  };
 }
 
-function dbPut(record) {
-  return new Promise((resolve, reject) => {
-    const req = txStore("readwrite").put(record);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+async function dbGetAll() {
+  const { data, error } = await supabaseClient.from("ads").select("*");
+  if (error) throw error;
+  return data.map(rowToAd);
 }
 
-function dbDelete(id) {
-  return new Promise((resolve, reject) => {
-    const req = txStore("readwrite").delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+async function dbPut(record) {
+  const { error } = await supabaseClient.from("ads").upsert(adToRow(record));
+  if (error) throw error;
+}
+
+async function dbDelete(id) {
+  const { error } = await supabaseClient.from("ads").delete().eq("id", id);
+  if (error) throw error;
+  // 이미지도 같이 정리한다 (없어도 조용히 무시).
+  await supabaseClient.storage.from(IMAGE_BUCKET).remove([`${id}.png`]);
+}
+
+async function uploadImage(dataUrl, id) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = `${id}.png`;
+  const { error } = await supabaseClient.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, blob, { contentType: "image/png", upsert: true });
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
 
 function uid() {
@@ -219,8 +239,16 @@ function uid() {
 let allAds = [];
 
 async function refresh() {
-  allAds = await dbGetAll();
-  renderGallery();
+  try {
+    allAds = await dbGetAll();
+    renderGallery();
+  } catch (err) {
+    const empty = document.getElementById("emptyState");
+    document.getElementById("gallery").innerHTML = "";
+    document.getElementById("resultCount").textContent = "0";
+    empty.hidden = false;
+    empty.textContent = "데이터를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침 해주세요.";
+  }
 }
 
 function escapeHtml(str) {
@@ -470,17 +498,34 @@ document.getElementById("btnSave").addEventListener("click", async () => {
     createdAt: editingId ? (allAds.find((a) => a.id === editingId)?.createdAt || Date.now()) : Date.now(),
   };
 
-  await dbPut(record);
-  closeModal();
-  await refresh();
+  const btnSave = document.getElementById("btnSave");
+  btnSave.disabled = true;
+  btnSave.textContent = "저장 중...";
+  try {
+    if (record.image.startsWith("data:")) {
+      record.image = await uploadImage(record.image, record.id);
+    }
+    await dbPut(record);
+    closeModal();
+    await refresh();
+  } catch (err) {
+    alert("저장에 실패했어요. 인터넷 연결을 확인하고 다시 시도해주세요.");
+  } finally {
+    btnSave.disabled = false;
+    btnSave.textContent = "저장";
+  }
 });
 
 document.getElementById("btnDelete").addEventListener("click", async () => {
   if (!editingId) return;
   if (!confirm("이 광고를 삭제할까요?")) return;
-  await dbDelete(editingId);
-  closeModal();
-  await refresh();
+  try {
+    await dbDelete(editingId);
+    closeModal();
+    await refresh();
+  } catch (err) {
+    alert("삭제에 실패했어요. 인터넷 연결을 확인하고 다시 시도해주세요.");
+  }
 });
 
 // ---------- Detail modal ----------
@@ -518,9 +563,13 @@ document.getElementById("btnDetailEdit").addEventListener("click", () => {
 document.getElementById("btnDetailDelete").addEventListener("click", async () => {
   if (!detailAdId) return;
   if (!confirm("이 광고를 삭제할까요?")) return;
-  await dbDelete(detailAdId);
-  detailBackdrop.hidden = true;
-  await refresh();
+  try {
+    await dbDelete(detailAdId);
+    detailBackdrop.hidden = true;
+    await refresh();
+  } catch (err) {
+    alert("삭제에 실패했어요. 인터넷 연결을 확인하고 다시 시도해주세요.");
+  }
 });
 
 // ---------- Filters ----------
@@ -538,6 +587,8 @@ document.getElementById("btnResetFilter").addEventListener("click", () => {
   document.getElementById("fSort").value = "dateDesc";
   renderGallery();
 });
+
+document.getElementById("btnRefresh").addEventListener("click", refresh);
 
 // ---------- Export / Import ----------
 document.getElementById("btnExport").addEventListener("click", async () => {
@@ -580,6 +631,6 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Init ----------
 (async function init() {
-  db = await openDb();
+  initSupabase();
   await refresh();
 })();
