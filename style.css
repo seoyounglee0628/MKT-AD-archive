@@ -49,8 +49,8 @@ body {
 
 .btn-primary { background: var(--primary); color: var(--primary-text); }
 .btn-primary:hover { filter: brightness(0.95); }
-.btn-ghost { background: #f0f1f3; color: var(--text); }
-.btn-ghost:hover { background: #e6e7ea; }
+.btn-ghost { background: #DBEAFE; color: #1D4ED8; }
+.btn-ghost:hover { background: #BFDBFE; }
 .btn-danger { background: #fdecec; color: var(--danger); }
 .btn-danger:hover { background: #fbdada; }
 
