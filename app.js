@@ -484,7 +484,15 @@ document.addEventListener("paste", (e) => {
 document.getElementById("btnAdd").addEventListener("click", openAddModal);
 document.getElementById("btnCloseModal").addEventListener("click", closeModal);
 document.getElementById("btnCancel").addEventListener("click", closeModal);
-modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+// 텍스트 필드 안에서 드래그로 글자를 선택하다가 마우스를 모달 바깥(어두운 배경)까지
+// 살짝 넘겨서 놓으면, mousedown은 입력창 안에서 시작했는데도 click 이벤트는
+// mousedown/mouseup의 공통 조상인 backdrop을 target으로 잡아버려 팝업이 닫혀버린다.
+// mousedown이 실제로 backdrop 자체에서 시작했을 때만 "바깥 클릭"으로 인정한다.
+let modalMouseDownOnBackdrop = false;
+modalBackdrop.addEventListener("mousedown", (e) => { modalMouseDownOnBackdrop = e.target === modalBackdrop; });
+modalBackdrop.addEventListener("click", (e) => {
+  if (e.target === modalBackdrop && modalMouseDownOnBackdrop) closeModal();
+});
 
 document.getElementById("btnSave").addEventListener("click", async () => {
   if (!currentImageDataUrl) {
@@ -558,7 +566,11 @@ function openDetail(id) {
 }
 
 document.getElementById("btnCloseDetail").addEventListener("click", () => (detailBackdrop.hidden = true));
-detailBackdrop.addEventListener("click", (e) => { if (e.target === detailBackdrop) detailBackdrop.hidden = true; });
+let detailMouseDownOnBackdrop = false;
+detailBackdrop.addEventListener("mousedown", (e) => { detailMouseDownOnBackdrop = e.target === detailBackdrop; });
+detailBackdrop.addEventListener("click", (e) => {
+  if (e.target === detailBackdrop && detailMouseDownOnBackdrop) detailBackdrop.hidden = true;
+});
 
 document.getElementById("btnDetailEdit").addEventListener("click", () => {
   const ad = allAds.find((a) => a.id === detailAdId);
